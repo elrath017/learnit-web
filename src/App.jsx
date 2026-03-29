@@ -45,13 +45,24 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(true); // open by default to ask for permission
 
-  const [lastWatched, setLastWatched] = useState(() => {
+  const [lastWatched, setLastWatched] = useState(null);
+  const [completedVideos, setCompletedVideos] = useState(new Set());
+  const [rootHandle, setRootHandle] = useState(null);
+
+  const saveProgressToFile = async (rh, lw, cv) => {
+    if (!rh) return;
     try {
-      return JSON.parse(localStorage.getItem('learnit_web_last') || 'null');
-    } catch {
-      return null;
+      const dbHandle = await rh.getFileHandle('learnit-progress.json', { create: true });
+      const writable = await dbHandle.createWritable();
+      await writable.write(JSON.stringify({
+         lastWatched: lw,
+         completedVideos: Array.from(cv)
+      }, null, 2));
+      await writable.close();
+    } catch (e) {
+      console.error('Failed to save progress to file', e);
     }
-  });
+  };
 
   const getCourseMetadata = () => {
     const isBestseller = Math.random() > 0.6;
@@ -71,13 +82,15 @@ function App() {
     };
   };
 
-  const parseDirectory = async (handle) => {
+  const parseDirectory = async (handle, currentPath = '') => {
     const structure = [];
     for await (const entry of handle.values()) {
       if (entry.name.startsWith('.')) continue;
 
+      const entryPath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
+
       if (entry.kind === 'directory') {
-        const children = await parseDirectory(entry);
+        const children = await parseDirectory(entry, entryPath);
         
         const thumbnailChild = children.find(c => c.type === 'file' && c.name.toLowerCase().startsWith('thumbnail.'));
         const filteredChildren = children.filter(c => !(c.type === 'file' && c.name.toLowerCase().startsWith('thumbnail.')));
@@ -85,7 +98,7 @@ function App() {
         structure.push({
           type: 'directory',
           name: entry.name,
-          path: entry.name,
+          path: entryPath,
           handle: entry,
           children: filteredChildren,
           thumbnailHandle: thumbnailChild ? thumbnailChild.handle : null
@@ -93,6 +106,7 @@ function App() {
       } else {
          const lowerName = entry.name.toLowerCase();
          if (lowerName.includes('[courseclub.me]') || lowerName.includes('[fcsnew.net]')) continue;
+         if (entry.name === 'learnit-progress.json') continue;
          
          const file = await entry.getFile();
          structure.push({
@@ -100,7 +114,7 @@ function App() {
              name: entry.name,
              size: file.size,
              handle: entry,
-             path: entry.name // placeholder relative
+             path: entryPath
          });
       }
     }
@@ -109,8 +123,23 @@ function App() {
 
   const handleSelectFolder = async () => {
     try {
-      const handle = await window.showDirectoryPicker({ mode: 'read' });
-      const structure = await parseDirectory(handle);
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      setRootHandle(handle);
+
+      let loadedLastWatched = null;
+      let loadedCompleted = new Set();
+      try {
+         const dbHandle = await handle.getFileHandle('learnit-progress.json');
+         const file = await dbHandle.getFile();
+         const text = await file.text();
+         const data = JSON.parse(text);
+         if (data.lastWatched) loadedLastWatched = data.lastWatched;
+         if (data.completedVideos) loadedCompleted = new Set(data.completedVideos);
+      } catch (e) {}
+      setLastWatched(loadedLastWatched);
+      setCompletedVideos(loadedCompleted);
+
+      const structure = await parseDirectory(handle, handle.name);
       
       const enriched = structure.map(c => ({
         ...c,
@@ -143,14 +172,33 @@ function App() {
           const record = {
             courseName: selectedCourse.name,
             videoName: v.name,
+            videoPath: v.path,
             timestamp: Date.now()
           };
           setLastWatched(record);
-          localStorage.setItem('learnit_web_last', JSON.stringify(record));
+          saveProgressToFile(rootHandle, record, completedVideos);
         }}
         onBack={handleBackToDashboard}
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
+        completedVideos={completedVideos}
+        onMarkComplete={(vPath) => {
+          setCompletedVideos(prev => {
+             const next = new Set(prev);
+             next.add(vPath);
+             saveProgressToFile(rootHandle, lastWatched, next);
+             return next;
+          });
+        }}
+        onToggleComplete={(vPath) => {
+          setCompletedVideos(prev => {
+             const next = new Set(prev);
+             if (next.has(vPath)) next.delete(vPath);
+             else next.add(vPath);
+             saveProgressToFile(rootHandle, lastWatched, next);
+             return next;
+          });
+        }}
       />
     );
   }
@@ -207,7 +255,7 @@ function App() {
                 let foundVideo = null;
                 const searchVideo = (items) => {
                   for (const item of items) {
-                    if (item.type === 'file' && item.name === lastWatched.videoName) foundVideo = item;
+                    if (item.type === 'file' && (item.path === lastWatched.videoPath || item.name === lastWatched.videoName)) foundVideo = item;
                     if (!foundVideo && item.type === 'directory' && item.children) searchVideo(item.children);
                   }
                 };
@@ -301,20 +349,7 @@ const ThumbnailRenderer = ({ handle, fallback }) => {
 };
 
 // Player Layout 
-const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, sidebarOpen, setSidebarOpen }) => {
-  const [completedVideos, setCompletedVideos] = useState(() => {
-    try {
-      const stored = localStorage.getItem('learnit_web_completed');
-      return stored ? new Set(JSON.parse(stored)) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
-
-  useEffect(() => {
-    localStorage.setItem('learnit_web_completed', JSON.stringify([...completedVideos]));
-  }, [completedVideos]);
-
+const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, sidebarOpen, setSidebarOpen, completedVideos, onMarkComplete, onToggleComplete }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [expandedFolders, setExpandedFolders] = useState({});
 
@@ -374,8 +409,8 @@ const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, side
   };
 
   const handleVideoCompleted = (shouldAutoplay) => {
-     if (currentVideo && !completedVideos.has(currentVideo.name)) {
-        setCompletedVideos(prev => new Set(prev).add(currentVideo.name));
+     if (currentVideo && !completedVideos.has(currentVideo.path)) {
+        onMarkComplete(currentVideo.path);
      }
      if (shouldAutoplay) {
         handleNextVideo();
@@ -469,7 +504,7 @@ const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, side
             </div>
 
             <div className="sidebar-content">
-              {course.children && <SimpleFileTree items={course.children} expanded={expandedFolders} toggle={toggleFolder} onPlay={setCurrentVideo} current={currentVideo} completed={completedVideos} />}
+              {course.children && <SimpleFileTree items={course.children} expanded={expandedFolders} toggle={toggleFolder} onPlay={setCurrentVideo} current={currentVideo} completed={completedVideos} onToggleComplete={onToggleComplete} />}
             </div>
           </div>
         )}
@@ -743,14 +778,14 @@ const LocalVideoPlayer = ({ fileHandle, onEnded, onNext }) => {
 };
 
 // Tree Parser for Sidebar
-const SimpleFileTree = ({ items, expanded, toggle, onPlay, current, completed, level = 0 }) => {
+const SimpleFileTree = ({ items, expanded, toggle, onPlay, current, completed, onToggleComplete, level = 0 }) => {
   const sortedItems = [...items].sort(advancedSort);
 
   return (
-    <div style={{ paddingLeft: level > 0 ? '1.6rem' : '0' }}>
+    <div className="file-tree" style={{ paddingLeft: level > 0 ? '1.6rem' : '0' }}>
       {sortedItems.map(item => {
         if (item.type === 'directory') {
-          const isExp = expanded[item.name];
+          const isExpanded = expanded[item.name];
           return (
             <div key={item.name} className="tree-directory">
               <div 
@@ -761,24 +796,34 @@ const SimpleFileTree = ({ items, expanded, toggle, onPlay, current, completed, l
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '1.6rem', fontWeight: 700, color: '#2d2f31' }}>{item.name.replace(/\.[^/.]+$/, "")}</div>
                 </div>
-                {isExp ? <ChevronLeft size={20} style={{ transform: 'rotate(90deg)' }} /> : <ChevronLeft size={20} style={{ transform: 'rotate(-90deg)' }} />}
+                {isExpanded ? <ChevronLeft size={20} style={{ transform: 'rotate(90deg)' }} /> : <ChevronLeft size={20} style={{ transform: 'rotate(-90deg)' }} />}
               </div>
-              {isExp && item.children && (
+              {isExpanded && item.children && (
                 <div className="directory-children" style={{ borderBottom: '1px solid #d1d7dc' }}>
-                  <SimpleFileTree items={item.children} expanded={expanded} toggle={toggle} onPlay={onPlay} current={current} completed={completed} level={level + 1} />
+                  <SimpleFileTree items={item.children} expanded={expanded} toggle={toggle} onPlay={onPlay} current={current} completed={completed} onToggleComplete={onToggleComplete} level={level + 1} />
                 </div>
               )}
             </div>
           );
         } else {
-          return <LessonItem key={item.name} item={item} current={current} onPlay={onPlay} completed={completed} level={level} />;
+          return (
+            <LessonItem 
+              key={item.name}
+              item={item} 
+              current={current} 
+              onPlay={onPlay} 
+              completed={completed} 
+              onToggleComplete={onToggleComplete}
+              level={level} 
+            />
+          );
         }
       })}
     </div>
   );
 };
 
-const LessonItem = ({ item, current, onPlay, completed, level }) => {
+const LessonItem = ({ item, current, onPlay, completed, onToggleComplete, level }) => {
   const isVideo = item.name.match(/\.(mp4|mkv|webm|ogg|mov|avi)$/i);
   const [duration, setDuration] = useState(null);
 
@@ -818,8 +863,8 @@ const LessonItem = ({ item, current, onPlay, completed, level }) => {
       onClick={handleItemClick}
       style={{ paddingLeft: level > 0 ? '1.6rem' : '1.6rem', backgroundColor: current?.name === item.name ? '#e1f0ec' : 'transparent', borderLeft: current?.name === item.name ? '4px solid #a435f0' : '4px solid transparent' }}
     >
-      <div className="lesson-checkbox">
-        {isVideo && (completed.has(item.name) ? <div style={{width: '16px', height: '16px', backgroundColor: '#a435f0', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '2px'}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div> : <div style={{width: '16px', height: '16px', border: '1px solid #8B9093', borderRadius: '2px'}}></div>)}
+      <div className="lesson-checkbox" onClick={(e) => { e.stopPropagation(); onToggleComplete && isVideo && onToggleComplete(item.path); }} style={{cursor: 'pointer'}}>
+        {isVideo && (completed.has(item.path) ? <div style={{width: '16px', height: '16px', backgroundColor: '#a435f0', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '2px'}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div> : <div style={{width: '16px', height: '16px', border: '1px solid #8B9093', borderRadius: '2px'}}></div>)}
         {!isVideo && <div style={{ width: 16 }}></div>}
       </div>
       <div className="lesson-info">
