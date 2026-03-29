@@ -184,6 +184,7 @@ function App() {
         completedVideos={completedVideos}
         onMarkComplete={(vPath) => {
           setCompletedVideos(prev => {
+             if (prev.has(vPath)) return prev;
              const next = new Set(prev);
              next.add(vPath);
              saveProgressToFile(rootHandle, lastWatched, next);
@@ -402,6 +403,9 @@ const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, side
   };
 
   const handleNextVideo = () => {
+     if (currentVideo && !completedVideos.has(currentVideo.path)) {
+        onMarkComplete(currentVideo.path);
+     }
      const currentIndex = flatPlaylist.findIndex(v => v.name === currentVideo?.name);
      if (currentIndex !== -1 && currentIndex + 1 < flatPlaylist.length) {
        setCurrentVideo(flatPlaylist[currentIndex + 1]);
