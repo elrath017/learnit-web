@@ -1,16 +1,49 @@
-# React + Vite
+# LearnIt Web Player 🎓
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+LearnIt is a beautifully crafted, local-first web application designed to locally organize and stream your downloaded offline video courses seamlessly using modern web APIs. It is built as an aesthetically rich, fully-featured alternative to desktop learning platforms.
 
-Currently, two official plugins are available:
+## 🚀 Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Local-First Architecture:** Uses the modern Web `File System Access API` to directly read huge video files from your computer securely. No massive background uploads, no backend, and zero data leaving your machine!
+- **Intelligent Dashboard:** Visually lists out your loaded courses complete with random metadata, thumbnails, and custom UI color styling.
+- **Smart Auto-Resume:** Tracks your video progress locally down to the second. Upon re-approving folder permissions, it seamlessly skips you right back to your exact active video cursor!
+- **Dynamic Course Player:** A robust, custom-built HTML5 video player featuring adjustable playback speeds up to 2x, custom volume sliders, global keyboard shortcuts, and smart autoplay skipping logic.
+- **Directory Layout:** Reconstructs your course into clean tree branches and chapters exactly how they were exported, visually tracking your chapter-by-chapter progression.
+- **Progress Tracking:** Saves exactly which individual video lectures you have completed per course entirely locally.
 
-## React Compiler
+## 🛠️ Built With
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- React 19 + ES Modules
+- Vite
+- Lucide React (Icons)
+- CSS (Custom Responsive Layouts)
+- HTML5 File System Access API
 
-## Expanding the ESLint configuration
+## ⚙️ Getting Started
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Because LearnIt doesn't require a backend API, running it locally is incredibly fast and simple.
+
+1. Clone this repository to your local machine:
+   ```bash
+   git clone https://github.com/elrath017/learnit-web.git
+   ```
+2. Navigate into the directory and install dependencies:
+   ```bash
+   cd learnit-web
+   npm install
+   ```
+3. Start the development server locally:
+   ```bash
+   npm run dev
+   ```
+
+## 🌐 Cloud Deployment (Netlify)
+
+You can instantly deploy this project perfectly to services like [Netlify](https://www.netlify.com/).
+
+1. Simply configure your Netlify site to link directly to your GitHub repository.
+2. Netlify will autodetect settings and dynamically execute:
+   ```bash
+   npm run build
+   ```
+3. The contents of the produced `dist` folder will be served live statically for free!
