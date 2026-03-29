@@ -49,18 +49,21 @@ function App() {
   const [completedVideos, setCompletedVideos] = useState(new Set());
   const [rootHandle, setRootHandle] = useState(null);
 
-  const saveProgressToFile = async (rh, lw, cv) => {
-    if (!rh) return;
+  const syncProgress = async (newLast, newCompleted) => {
+    if (!rootHandle) return;
     try {
-      const dbHandle = await rh.getFileHandle('learnit-progress.json', { create: true });
+      const dbHandle = await rootHandle.getFileHandle('learnitweb-progress.json', { create: true });
       const writable = await dbHandle.createWritable();
-      await writable.write(JSON.stringify({
-         lastWatched: lw,
-         completedVideos: Array.from(cv)
-      }, null, 2));
+      
+      const recordToSave = {
+        lastWatched: newLast || lastWatched,
+        completedVideos: Array.from(newCompleted || completedVideos)
+      };
+
+      await writable.write(JSON.stringify(recordToSave, null, 2));
       await writable.close();
     } catch (e) {
-      console.error('Failed to save progress to file', e);
+      console.error("Failed to save progress", e);
     }
   };
 
@@ -106,7 +109,7 @@ function App() {
       } else {
          const lowerName = entry.name.toLowerCase();
          if (lowerName.includes('[courseclub.me]') || lowerName.includes('[fcsnew.net]')) continue;
-         if (entry.name === 'learnit-progress.json') continue;
+         if (entry.name === 'learnitweb-progress.json') continue;
          
          const file = await entry.getFile();
          structure.push({
@@ -129,7 +132,13 @@ function App() {
       let loadedLastWatched = null;
       let loadedCompleted = new Set();
       try {
-         const dbHandle = await handle.getFileHandle('learnit-progress.json');
+         // Try to load either form of the filename for backward compatibility
+         let dbHandle;
+         try {
+           dbHandle = await handle.getFileHandle('learnitweb-progress.json');
+         } catch {
+           dbHandle = await handle.getFileHandle('learnit-progress.json');
+         }
          const file = await dbHandle.getFile();
          const text = await file.text();
          const data = JSON.parse(text);
@@ -154,7 +163,35 @@ function App() {
 
   const handleCourseSelect = (course) => {
     setSelectedCourse(course);
-    setCurrentVideo(null); // Wait for them to select a video inside
+    
+    // Auto-select first video
+    const findFirstVideo = (items) => {
+      const sorted = [...items].sort(advancedSort);
+      for (const item of sorted) {
+        if (item.type === 'file' && item.name.match(/\.(mp4|mkv|webm|ogg|mov|avi)$/i)) return item;
+        if (item.type === 'directory' && item.children) {
+          const found = findFirstVideo(item.children);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    
+    if (course.children) {
+      const first = findFirstVideo(course.children);
+      if (first) {
+        setCurrentVideo(first);
+        // Important: sync progress for the first video auto-load
+        const record = {
+          courseName: course.name,
+          videoName: first.name,
+          videoPath: first.path,
+          timestamp: Date.now()
+        };
+        setLastWatched(record);
+        syncProgress(record, completedVideos);
+      }
+    }
   };
 
   const handleBackToDashboard = () => {
@@ -176,7 +213,7 @@ function App() {
             timestamp: Date.now()
           };
           setLastWatched(record);
-          saveProgressToFile(rootHandle, record, completedVideos);
+          syncProgress(record, completedVideos);
         }}
         onBack={handleBackToDashboard}
         sidebarOpen={sidebarOpen}
@@ -187,7 +224,7 @@ function App() {
              if (prev.has(vPath)) return prev;
              const next = new Set(prev);
              next.add(vPath);
-             saveProgressToFile(rootHandle, lastWatched, next);
+             syncProgress(lastWatched, next);
              return next;
           });
         }}
@@ -196,9 +233,16 @@ function App() {
              const next = new Set(prev);
              if (next.has(vPath)) next.delete(vPath);
              else next.add(vPath);
-             saveProgressToFile(rootHandle, lastWatched, next);
+             syncProgress(lastWatched, next);
              return next;
           });
+        }}
+        onUpdateTime={(time) => {
+           if (lastWatched) {
+             const updated = { ...lastWatched, videoTime: time };
+             setLastWatched(updated);
+             syncProgress(updated, completedVideos);
+           }
         }}
       />
     );
@@ -350,7 +394,7 @@ const ThumbnailRenderer = ({ handle, fallback }) => {
 };
 
 // Player Layout 
-const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, sidebarOpen, setSidebarOpen, completedVideos, onMarkComplete, onToggleComplete }) => {
+const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, sidebarOpen, setSidebarOpen, completedVideos, onMarkComplete, onToggleComplete, onUpdateTime }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [expandedFolders, setExpandedFolders] = useState({});
 
@@ -440,7 +484,12 @@ const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, side
         <div className="course-main-left" style={{flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', backgroundColor: '#fff'}}>
           <div className="video-container" style={{ position: 'relative', width: '100%', background: '#000', display: 'flex', flexShrink: 0, aspectRatio: '16/9' }}>
             {currentVideo ? (
-              <LocalVideoPlayer fileHandle={currentVideo.handle} onEnded={handleVideoCompleted} onNext={handleNextVideo} />
+              <LocalVideoPlayer 
+                fileHandle={currentVideo.handle} 
+                onEnded={handleVideoCompleted} 
+                onNext={handleNextVideo} 
+                onUpdateTime={onUpdateTime}
+              />
             ) : (
               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '2rem' }}>
                 Select a video to start learning!
@@ -523,7 +572,7 @@ const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, side
 };
 
 // Local Video Player using ObjectURL
-const LocalVideoPlayer = ({ fileHandle, onEnded, onNext }) => {
+const LocalVideoPlayer = ({ fileHandle, onEnded, onNext, onUpdateTime }) => {
   const [url, setUrl] = useState(null);
   const videoRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -563,6 +612,10 @@ const LocalVideoPlayer = ({ fileHandle, onEnded, onNext }) => {
       setProgress((video.currentTime / video.duration) * 100 || 0);
       if (video.currentTime > 0) {
          localStorage.setItem(`learnit_resume_${fileHandle.name}`, video.currentTime);
+         // Throttle logic could be here, but for now we'll pass to parent
+         if (Math.abs(video.currentTime - currentTime) > 5) {
+            onUpdateTime(video.currentTime);
+         }
       }
     };
     const updateDuration = () => {
