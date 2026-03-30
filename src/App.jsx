@@ -49,21 +49,33 @@ function App() {
   const [completedVideos, setCompletedVideos] = useState(new Set());
   const [rootHandle, setRootHandle] = useState(null);
 
-  const syncProgress = async (newLast, newCompleted) => {
+  const LS_KEY = 'learnit_progress';
+
+  const saveToLocalStorage = (newLast, newCompleted) => {
+    try {
+      const record = {
+        lastWatched: newLast ?? lastWatched,
+        completedVideos: Array.from(newCompleted ?? completedVideos)
+      };
+      localStorage.setItem(LS_KEY, JSON.stringify(record));
+    } catch (e) {
+      console.error('Failed to save progress to localStorage', e);
+    }
+  };
+
+  const saveToFile = async (newLast, newCompleted) => {
     if (!rootHandle) return;
     try {
       const dbHandle = await rootHandle.getFileHandle('learnitweb-progress.json', { create: true });
       const writable = await dbHandle.createWritable();
-      
-      const recordToSave = {
-        lastWatched: newLast || lastWatched,
-        completedVideos: Array.from(newCompleted || completedVideos)
+      const record = {
+        lastWatched: newLast ?? lastWatched,
+        completedVideos: Array.from(newCompleted ?? completedVideos)
       };
-
-      await writable.write(JSON.stringify(recordToSave, null, 2));
+      await writable.write(JSON.stringify(record, null, 2));
       await writable.close();
     } catch (e) {
-      console.error("Failed to save progress", e);
+      console.error('Failed to save progress to file', e);
     }
   };
 
@@ -189,7 +201,7 @@ function App() {
           timestamp: Date.now()
         };
         setLastWatched(record);
-        syncProgress(record, completedVideos);
+        saveToLocalStorage(record, completedVideos);
       }
     }
   };
@@ -213,7 +225,7 @@ function App() {
             timestamp: Date.now()
           };
           setLastWatched(record);
-          syncProgress(record, completedVideos);
+          saveToLocalStorage(record, completedVideos);
         }}
         onBack={handleBackToDashboard}
         sidebarOpen={sidebarOpen}
@@ -224,7 +236,7 @@ function App() {
              if (prev.has(vPath)) return prev;
              const next = new Set(prev);
              next.add(vPath);
-             syncProgress(lastWatched, next);
+             saveToLocalStorage(lastWatched, next);
              return next;
           });
         }}
@@ -233,7 +245,7 @@ function App() {
              const next = new Set(prev);
              if (next.has(vPath)) next.delete(vPath);
              else next.add(vPath);
-             syncProgress(lastWatched, next);
+             saveToLocalStorage(lastWatched, next);
              return next;
           });
         }}
@@ -241,7 +253,7 @@ function App() {
            if (lastWatched) {
              const updated = { ...lastWatched, videoTime: time };
              setLastWatched(updated);
-             syncProgress(updated, completedVideos);
+             saveToLocalStorage(updated, completedVideos);
            }
         }}
         onRestartCourse={() => {
@@ -256,9 +268,30 @@ function App() {
           setCompletedVideos(prev => {
             const next = new Set(prev);
             videoPaths.forEach(p => next.delete(p));
-            syncProgress(lastWatched, next);
+            saveToLocalStorage(lastWatched, next);
             return next;
           });
+        }}
+        onSaveToFile={saveToFile}
+        onRecoverFromFile={async () => {
+          if (!rootHandle) return;
+          try {
+            let dbHandle;
+            try {
+              dbHandle = await rootHandle.getFileHandle('learnitweb-progress.json');
+            } catch {
+              dbHandle = await rootHandle.getFileHandle('learnit-progress.json');
+            }
+            const file = await dbHandle.getFile();
+            const text = await file.text();
+            const data = JSON.parse(text);
+            if (data.lastWatched) setLastWatched(data.lastWatched);
+            if (data.completedVideos) setCompletedVideos(new Set(data.completedVideos));
+            return true;
+          } catch (e) {
+            console.error('Failed to recover progress from file', e);
+            return false;
+          }
         }}
       />
     );
@@ -410,10 +443,12 @@ const ThumbnailRenderer = ({ handle, fallback }) => {
 };
 
 // Player Layout 
-const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, sidebarOpen, setSidebarOpen, completedVideos, onMarkComplete, onToggleComplete, onUpdateTime, onRestartCourse }) => {
+const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, sidebarOpen, setSidebarOpen, completedVideos, onMarkComplete, onToggleComplete, onUpdateTime, onRestartCourse, onSaveToFile, onRecoverFromFile }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [expandedFolders, setExpandedFolders] = useState({});
   const [showProgressPanel, setShowProgressPanel] = useState(false);
+  const [savedToFile, setSavedToFile] = useState(false);
+  const [recoveredFromFile, setRecoveredFromFile] = useState(false);
 
   useEffect(() => {
     if (!currentVideo || !course.children) return;
@@ -515,8 +550,36 @@ const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, side
                     {progressPercent === 100 ? '🎉 Course complete!' : `${totalVideos - completedCount} lecture${totalVideos - completedCount !== 1 ? 's' : ''} remaining`}
                   </div>
                 </div>
+                <div style={{ display: 'flex', gap: '0.8rem', marginBottom: '0.8rem' }}>
+                  <button
+                    onClick={async () => {
+                      if (onSaveToFile) {
+                        await onSaveToFile();
+                        setSavedToFile(true);
+                        setTimeout(() => setSavedToFile(false), 2000);
+                      }
+                    }}
+                    style={{ flex: 1, padding: '1rem 0.6rem', background: savedToFile ? 'rgba(34,197,94,0.15)' : '#a435f0', border: savedToFile ? '1px solid #22c55e' : 'none', color: savedToFile ? '#22c55e' : '#fff', borderRadius: '4px', fontWeight: 700, fontSize: '1.2rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', transition: 'all 0.2s' }}
+                  >
+                    {savedToFile ? '✓ Saved!' : '💾 Save'}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (onRecoverFromFile) {
+                        const ok = await onRecoverFromFile();
+                        if (ok) {
+                          setRecoveredFromFile(true);
+                          setTimeout(() => setRecoveredFromFile(false), 2000);
+                        }
+                      }
+                    }}
+                    style={{ flex: 1, padding: '1rem 0.6rem', background: recoveredFromFile ? 'rgba(34,197,94,0.15)' : 'transparent', border: recoveredFromFile ? '1px solid #22c55e' : '1px solid #d1d7dc', color: recoveredFromFile ? '#22c55e' : '#d1d7dc', borderRadius: '4px', fontWeight: 700, fontSize: '1.2rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', transition: 'all 0.2s' }}
+                  >
+                    {recoveredFromFile ? '✓ Restored!' : '🗂️ Recover'}
+                  </button>
+                </div>
                 <button
-                  onClick={() => { onRestartCourse && onRestartCourse(); setShowProgressPanel(false); }}
+                  onClick={() => { onRestartCourse && onRestartCourse(); if (flatPlaylist.length > 0) setCurrentVideo(flatPlaylist[0]); setShowProgressPanel(false); }}
                   style={{ width: '100%', padding: '1rem', background: 'transparent', border: '1px solid #a435f0', color: '#a435f0', borderRadius: '4px', fontWeight: 700, fontSize: '1.3rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem', transition: 'background 0.2s' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'rgba(164,53,240,0.12)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
