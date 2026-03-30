@@ -244,6 +244,22 @@ function App() {
              syncProgress(updated, completedVideos);
            }
         }}
+        onRestartCourse={() => {
+          const videoPaths = [];
+          const collectPaths = (items) => {
+            items.forEach(item => {
+              if (item.type === 'file' && item.name.match(/\.(mp4|mkv|webm|ogg|mov|avi)$/i)) videoPaths.push(item.path);
+              if (item.type === 'directory' && item.children) collectPaths(item.children);
+            });
+          };
+          if (selectedCourse.children) collectPaths(selectedCourse.children);
+          setCompletedVideos(prev => {
+            const next = new Set(prev);
+            videoPaths.forEach(p => next.delete(p));
+            syncProgress(lastWatched, next);
+            return next;
+          });
+        }}
       />
     );
   }
@@ -394,9 +410,10 @@ const ThumbnailRenderer = ({ handle, fallback }) => {
 };
 
 // Player Layout 
-const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, sidebarOpen, setSidebarOpen, completedVideos, onMarkComplete, onToggleComplete, onUpdateTime }) => {
+const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, sidebarOpen, setSidebarOpen, completedVideos, onMarkComplete, onToggleComplete, onUpdateTime, onRestartCourse }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [expandedFolders, setExpandedFolders] = useState({});
+  const [showProgressPanel, setShowProgressPanel] = useState(false);
 
   useEffect(() => {
     if (!currentVideo || !course.children) return;
@@ -442,6 +459,10 @@ const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, side
     return playlist;
   }, [course]);
 
+  const totalVideos = flatPlaylist.length;
+  const completedCount = flatPlaylist.filter(v => completedVideos.has(v.path)).length;
+  const progressPercent = totalVideos > 0 ? Math.round((completedCount / totalVideos) * 100) : 0;
+
   const toggleFolder = (path) => {
     setExpandedFolders(prev => ({ ...prev, [path]: !prev[path] }));
   };
@@ -474,7 +495,37 @@ const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, side
         </div>
         <div className="player-header-right" style={{display: 'flex', alignItems: 'center', gap: '1.6rem'}}>
           <button style={{background: 'transparent', color: '#fff', border: 'none', fontWeight: 700, fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '0.8rem', cursor: 'pointer'}}><Star size={16} /> Leave a rating</button>
-          <button style={{background: 'transparent', color: '#fff', border: '1px solid #fff', padding: '0.6rem 1.2rem', fontWeight: 700, fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '0.8rem', cursor: 'pointer'}}><Trophy size={16} /> Your progress</button>
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setShowProgressPanel(p => !p)} style={{background: showProgressPanel ? 'rgba(164,53,240,0.15)' : 'transparent', color: '#fff', border: '1px solid #fff', padding: '0.6rem 1.2rem', fontWeight: 700, fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '0.8rem', cursor: 'pointer', borderRadius: '4px'}}><Trophy size={16} /> Your progress</button>
+            {showProgressPanel && (
+              <div style={{ position: 'absolute', top: 'calc(100% + 1rem)', right: 0, width: '30rem', background: '#1c1d1f', border: '1px solid #3e4143', borderRadius: '8px', padding: '2rem', zIndex: 300, boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.6rem' }}>
+                  <span style={{ color: '#fff', fontWeight: 700, fontSize: '1.6rem' }}>Your Progress</span>
+                  <button onClick={() => setShowProgressPanel(false)} style={{ background: 'none', border: 'none', color: '#6a6f73', cursor: 'pointer', display: 'flex', padding: 0 }}><X size={18} /></button>
+                </div>
+                <div style={{ marginBottom: '1.6rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
+                    <span style={{ color: '#d1d7dc', fontSize: '1.3rem' }}>{completedCount} / {totalVideos} lectures</span>
+                    <span style={{ color: '#a435f0', fontWeight: 800, fontSize: '2rem' }}>{progressPercent}%</span>
+                  </div>
+                  <div style={{ height: '8px', background: '#3e4143', borderRadius: '4px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${progressPercent}%`, background: 'linear-gradient(90deg, #7c3aed, #a435f0)', borderRadius: '4px', transition: 'width 0.4s ease' }} />
+                  </div>
+                  <div style={{ marginTop: '0.8rem', fontSize: '1.2rem', color: '#6a6f73' }}>
+                    {progressPercent === 100 ? '🎉 Course complete!' : `${totalVideos - completedCount} lecture${totalVideos - completedCount !== 1 ? 's' : ''} remaining`}
+                  </div>
+                </div>
+                <button
+                  onClick={() => { onRestartCourse && onRestartCourse(); setShowProgressPanel(false); }}
+                  style={{ width: '100%', padding: '1rem', background: 'transparent', border: '1px solid #a435f0', color: '#a435f0', borderRadius: '4px', fontWeight: 700, fontSize: '1.3rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem', transition: 'background 0.2s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(164,53,240,0.12)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  ↺ Restart Course
+                </button>
+              </div>
+            )}
+          </div>
           <button style={{background: 'transparent', color: '#fff', border: '1px solid #fff', padding: '0.6rem 1.2rem', fontWeight: 700, fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '0.8rem', cursor: 'pointer'}}>Share <Share2 size={16} /></button>
           <button style={{background: 'transparent', color: '#fff', border: '1px solid #fff', padding: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'}}><MoreVertical size={16} /></button>
         </div>
