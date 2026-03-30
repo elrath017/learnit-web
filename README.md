@@ -2,45 +2,45 @@
 
 LearnIt is a beautifully crafted, local-first web application designed to locally organize and stream your downloaded offline video courses seamlessly using modern web APIs. It is built as an aesthetically rich, fully-featured alternative to desktop learning platforms.
 
+**🌐 Live Web Version:** [learnitweb.netlify.app](https://learnitweb.netlify.app/)
+
 ## 🚀 Features
 
 - **Local-First Architecture:** Uses the modern Web `File System Access API` to directly read huge video files from your computer securely. No massive background uploads, no backend, and zero data leaving your machine!
-- **Intelligent Dashboard:** Visually lists out your loaded courses complete with random metadata, thumbnails, and custom UI color styling.
-- **Smart Auto-Resume:** Tracks your video progress locally down to the second. Persistent progress is saved in a `learnitweb-progress.json` file directly in your course folder.
-- **Dynamic Course Player:** A robust, custom-built HTML5 video player featuring adjustable playback speeds up to 2x, custom volume sliders, global keyboard shortcuts, and smart autoplay skipping logic.
-- **Directory Layout:** Reconstructs your course into clean tree branches and chapters exactly how they were exported, visually tracking your chapter-by-chapter progression.
-- **AI Assistant:** Integrated sidebar for AI-powered course assistance (accessible via the "AI Assistant" tab).
+- **Intelligent Dashboard:** Visually lists your course folders. It automatically filters out non-folder files (like metadata or JSON) to keep your library clean.
+- **Smart Tracking:** Progress is automatically tracked in your browser's local storage for a seamless experience. Watch count, completion status, and last viewed time are all handled instantly.
+- **Persistent Portable Progress:** Use the "Your Progress" panel to explicitly **💾 Save** your history to a `learnitweb-progress.json` file in your course folder or **🗂️ Recover** history from an existing file.
+- **Dynamic Course Player:** A robust, custom-built HTML5 video player featuring adjustable playback speeds, custom volume sliders, keyboard shortcuts, and smart autoplay logic.
+- **Course Management:** Monitor your path with a visual progress bar and percentage indicator. Need to start over? Use the **↺ Restart Course** feature to clear progress and jump back to the first lesson.
 
 ## 📖 How to Use
 
 LearnIt is designed to be simple and intuitive. Follow these steps to get started:
 
 ### 1. Launch the App
-Open the hosted version or run it locally using `npm run dev`. On first load, you'll be greeted with a request to authorize folder access.
+Go to the [live web version](https://learnitweb.netlify.app/) or run it locally using `npm run dev`. On first load, you'll be greeted with a request to authorize folder access.
 
 ### 2. Select Your Courses Folder
-Click on the **"Authorize Access to Local Courses Folder"** button. This will open a browser directory picker. 
-> [!IMPORTANT]
-> Select the **root folder** where all your course directories are stored. LearnIt will automatically scan for subdirectories (courses) and video files.
+Click on the **"Authorize Access to Local Courses Folder"** button and select the **root folder** where all your course directories are stored. LearnIt scans for subdirectories (courses) and organizes them automatically.
 
 ### 3. Browse and Play
-- Your courses will appear as cards on the dashboard.
-- Click on a course to open the player.
-- The app automatically finds and starts the **first video** in the course structure.
-- Use the sidebar on the right to navigate between chapters and lectures.
+- Course folders appear as cards on the dashboard (loose files are filtered out).
+- Click a course to start learning. The app automatically launches the first video.
+- Use the right sidebar to navigate between chapters and lectures.
 
-### 4. Progress Syncing
-As you watch, your progress is saved automatically. 
-- A file named `learnitweb-progress.json` is created/updated in your selected root folder. 
-- This file stores your `lastWatched` video, its timestamp, and a list of `completedVideos`.
-- **Portability:** Because the progress is saved in a file, you can move your course folder to another computer, and LearnIt will still remember where you left off!
+### 4. Managing Progress
+Your learning journey is saved automatically to your browser, but you can manage it further via the **"Your progress"** button in the player header:
+- **💾 Save:** Commits your current progress to `learnitweb-progress.json` in your local folder.
+- **🗂️ Recover:** Restores your history from a previously saved JSON file (perfect for switching devices).
+- **↺ Restart Course:** Resets all completion marks for the current course and returns you to the first lecture.
 
 ### 5. Player Controls & Shortcuts
 - **Space:** Play / Pause.
 - **Arrow Right / Left:** Seek forward/backward 10 seconds.
 - **F:** Toggle Fullscreen.
-- **Mouse Drag:** You can click and drag the progress bar to scrub through the video.
-- **Autoplay:** Toggle the "Autoplay" switch in the bottom right to automatically play the next video when the current one ends.
+- **Volume Controller:** Custom slider with percentage display.
+- **Speed Selector:** Adjustable playback from 0.5x to 2x.
+- **Autoplay:** Automatically jump to the next lecture upon completion.
 
 ## 🛠️ Built With
 

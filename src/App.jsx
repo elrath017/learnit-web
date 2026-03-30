@@ -162,10 +162,12 @@ function App() {
 
       const structure = await parseDirectory(handle, handle.name);
       
-      const enriched = structure.map(c => ({
-        ...c,
-        ...getCourseMetadata()
-      }));
+      const enriched = structure
+        .filter(c => c.type === 'directory')
+        .map(c => ({
+          ...c,
+          ...getCourseMetadata()
+        }));
       setCourses(enriched);
       setShowSettings(false);
     } catch (err) {
