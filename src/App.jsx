@@ -826,7 +826,7 @@ const LocalVideoPlayer = ({ fileHandle, onEnded, onNext, onUpdateTime }) => {
             <button onClick={toggleFullscreen} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex' }}>
               <Maximize size={20} />
             </button>
-            <span style={{ fontSize: '1.4rem', fontWeight: 700, marginLeft: '0.8rem', color: '#a435f0', fontFamily: 'sans-serif' }}>LearnIt</span>
+            <img src="/logo.svg" alt="LearnIt" style={{ height: '2.4rem', borderRadius: '4px', marginLeft: '0.4rem' }} />
           </div>
         </div>
       </div>
