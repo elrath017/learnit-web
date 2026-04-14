@@ -45,8 +45,31 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(true); // open by default to ask for permission
 
-  const [lastWatched, setLastWatched] = useState(null);
-  const [completedVideos, setCompletedVideos] = useState(new Set());
+  const [lastWatched, setLastWatched] = useState(() => {
+    try {
+      const saved = localStorage.getItem('learnit_progress');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.lastWatched) {
+           if (parsed.lastWatched.courseName && !parsed.lastWatched[parsed.lastWatched.courseName]) {
+             return { [parsed.lastWatched.courseName]: parsed.lastWatched };
+           }
+           return parsed.lastWatched;
+        }
+      }
+    } catch (e) {}
+    return {};
+  });
+  const [completedVideos, setCompletedVideos] = useState(() => {
+    try {
+      const saved = localStorage.getItem('learnit_progress');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.completedVideos) return new Set(parsed.completedVideos);
+      }
+    } catch (e) {}
+    return new Set();
+  });
   const [rootHandle, setRootHandle] = useState(null);
 
   const LS_KEY = 'learnit_progress';
@@ -106,10 +129,10 @@ function App() {
 
       if (entry.kind === 'directory') {
         const children = await parseDirectory(entry, entryPath);
-        
+
         const thumbnailChild = children.find(c => c.type === 'file' && c.name.toLowerCase().startsWith('thumbnail.'));
         const filteredChildren = children.filter(c => !(c.type === 'file' && c.name.toLowerCase().startsWith('thumbnail.')));
-        
+
         structure.push({
           type: 'directory',
           name: entry.name,
@@ -119,18 +142,18 @@ function App() {
           thumbnailHandle: thumbnailChild ? thumbnailChild.handle : null
         });
       } else {
-         const lowerName = entry.name.toLowerCase();
-         if (lowerName.includes('[courseclub.me]') || lowerName.includes('[fcsnew.net]')) continue;
-         if (entry.name === 'learnitweb-progress.json') continue;
-         
-         const file = await entry.getFile();
-         structure.push({
-             type: 'file',
-             name: entry.name,
-             size: file.size,
-             handle: entry,
-             path: entryPath
-         });
+        const lowerName = entry.name.toLowerCase();
+        if (lowerName.includes('[courseclub.me]') || lowerName.includes('[fcsnew.net]')) continue;
+        if (entry.name === 'learnitweb-progress.json') continue;
+
+        const file = await entry.getFile();
+        structure.push({
+          type: 'file',
+          name: entry.name,
+          size: file.size,
+          handle: entry,
+          path: entryPath
+        });
       }
     }
     return structure;
@@ -141,27 +164,37 @@ function App() {
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
       setRootHandle(handle);
 
-      let loadedLastWatched = null;
-      let loadedCompleted = new Set();
-      try {
-         // Try to load either form of the filename for backward compatibility
-         let dbHandle;
-         try {
-           dbHandle = await handle.getFileHandle('learnitweb-progress.json');
-         } catch {
-           dbHandle = await handle.getFileHandle('learnit-progress.json');
-         }
-         const file = await dbHandle.getFile();
-         const text = await file.text();
-         const data = JSON.parse(text);
-         if (data.lastWatched) loadedLastWatched = data.lastWatched;
-         if (data.completedVideos) loadedCompleted = new Set(data.completedVideos);
-      } catch (e) {}
-      setLastWatched(loadedLastWatched);
-      setCompletedVideos(loadedCompleted);
+      // Auto-load from JSON only if localStorage didn't have anything
+      const hasLocalData = Object.keys(lastWatched).length > 0 || completedVideos.size > 0;
+      if (!hasLocalData) {
+        let loadedLastWatched = {};
+        let loadedCompleted = new Set();
+        try {
+          // Try to load either form of the filename for backward compatibility
+          let dbHandle;
+          try {
+            dbHandle = await handle.getFileHandle('learnitweb-progress.json');
+          } catch {
+            dbHandle = await handle.getFileHandle('learnit-progress.json');
+          }
+          const file = await dbHandle.getFile();
+          const text = await file.text();
+          const data = JSON.parse(text);
+          if (data.lastWatched) {
+            if (data.lastWatched.courseName && !data.lastWatched[data.lastWatched.courseName]) {
+              loadedLastWatched = { [data.lastWatched.courseName]: data.lastWatched };
+            } else {
+              loadedLastWatched = data.lastWatched;
+            }
+          }
+          if (data.completedVideos) loadedCompleted = new Set(data.completedVideos);
+        } catch (e) { }
+        setLastWatched(loadedLastWatched);
+        setCompletedVideos(loadedCompleted);
+      }
 
       const structure = await parseDirectory(handle, handle.name);
-      
+
       const enriched = structure
         .filter(c => c.type === 'directory')
         .map(c => ({
@@ -177,7 +210,7 @@ function App() {
 
   const handleCourseSelect = (course) => {
     setSelectedCourse(course);
-    
+
     // Auto-select first video
     const findFirstVideo = (items) => {
       const sorted = [...items].sort(advancedSort);
@@ -190,7 +223,7 @@ function App() {
       }
       return null;
     };
-    
+
     if (course.children) {
       const first = findFirstVideo(course.children);
       if (first) {
@@ -202,8 +235,11 @@ function App() {
           videoPath: first.path,
           timestamp: Date.now()
         };
-        setLastWatched(record);
-        saveToLocalStorage(record, completedVideos);
+        setLastWatched(prev => {
+          const next = { ...prev, [course.name]: record };
+          saveToLocalStorage(next, completedVideos);
+          return next;
+        });
       }
     }
   };
@@ -215,9 +251,9 @@ function App() {
 
   if (selectedCourse) {
     return (
-      <VideoPlayerLayout 
-        course={selectedCourse} 
-        currentVideo={currentVideo} 
+      <VideoPlayerLayout
+        course={selectedCourse}
+        currentVideo={currentVideo}
         setCurrentVideo={(v) => {
           setCurrentVideo(v);
           const record = {
@@ -226,8 +262,11 @@ function App() {
             videoPath: v.path,
             timestamp: Date.now()
           };
-          setLastWatched(record);
-          saveToLocalStorage(record, completedVideos);
+          setLastWatched(prev => {
+            const next = { ...prev, [selectedCourse.name]: record };
+            saveToLocalStorage(next, completedVideos);
+            return next;
+          });
         }}
         onBack={handleBackToDashboard}
         sidebarOpen={sidebarOpen}
@@ -235,28 +274,32 @@ function App() {
         completedVideos={completedVideos}
         onMarkComplete={(vPath) => {
           setCompletedVideos(prev => {
-             if (prev.has(vPath)) return prev;
-             const next = new Set(prev);
-             next.add(vPath);
-             saveToLocalStorage(lastWatched, next);
-             return next;
+            if (prev.has(vPath)) return prev;
+            const next = new Set(prev);
+            next.add(vPath);
+            saveToLocalStorage(lastWatched, next);
+            return next;
           });
         }}
         onToggleComplete={(vPath) => {
           setCompletedVideos(prev => {
-             const next = new Set(prev);
-             if (next.has(vPath)) next.delete(vPath);
-             else next.add(vPath);
-             saveToLocalStorage(lastWatched, next);
-             return next;
+            const next = new Set(prev);
+            if (next.has(vPath)) next.delete(vPath);
+            else next.add(vPath);
+            saveToLocalStorage(lastWatched, next);
+            return next;
           });
         }}
         onUpdateTime={(time) => {
-           if (lastWatched) {
-             const updated = { ...lastWatched, videoTime: time };
-             setLastWatched(updated);
-             saveToLocalStorage(updated, completedVideos);
-           }
+          setLastWatched(prev => {
+            if (prev[selectedCourse.name]) {
+              const updatedRecord = { ...prev[selectedCourse.name], videoTime: time };
+              const next = { ...prev, [selectedCourse.name]: updatedRecord };
+              saveToLocalStorage(next, completedVideos);
+              return next;
+            }
+            return prev;
+          });
         }}
         onRestartCourse={() => {
           const videoPaths = [];
@@ -287,7 +330,13 @@ function App() {
             const file = await dbHandle.getFile();
             const text = await file.text();
             const data = JSON.parse(text);
-            if (data.lastWatched) setLastWatched(data.lastWatched);
+            if (data.lastWatched) {
+              if (data.lastWatched.courseName && !data.lastWatched[data.lastWatched.courseName]) {
+                setLastWatched({ [data.lastWatched.courseName]: data.lastWatched });
+              } else {
+                setLastWatched(data.lastWatched);
+              }
+            }
             if (data.completedVideos) setCompletedVideos(new Set(data.completedVideos));
             return true;
           } catch (e) {
@@ -307,7 +356,7 @@ function App() {
           <Search size={20} color="#6a6f73" />
           <input placeholder="Search for anything" style={{ border: 'none', background: 'transparent', width: '100%', fontSize: '1.4rem', outline: 'none' }} />
         </div>
-        
+
         <div className="nav-links" style={{ display: 'flex', alignItems: 'center', gap: '2rem', marginLeft: 'auto' }}>
           <span style={{ fontWeight: 500, cursor: 'pointer', color: '#2d2f31', fontSize: '1.4rem' }}>Categories</span>
           <button onClick={() => setShowSettings(true)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', color: '#2d2f31' }}>
@@ -326,7 +375,7 @@ function App() {
             </div>
             <div className="modal-body" style={{ textAlign: 'center', padding: '2rem' }}>
               <p style={{ fontSize: '1.4rem', marginBottom: '2rem', lineHeight: '1.6', color: '#2d2f31' }}>
-                This is the Web Version of LearnIt. It uses the modern <br/><b>File System Access API</b> to read your videos directly in the browser!
+                This is the Web Version of LearnIt. It uses the modern <br /><b>File System Access API</b> to read your videos directly in the browser!
               </p>
               <div style={{ display: 'flex', justifyContent: 'center', gap: '1.6rem' }}>
                 <button onClick={() => setShowSettings(false)} className="btn-secondary" style={{ padding: '1.2rem 2.4rem', fontSize: '1.4rem', border: '1px solid #2d2f31' }}>
@@ -342,38 +391,47 @@ function App() {
       )}
 
       <main className="main-container">
-        {lastWatched && (
+        {Object.keys(lastWatched).length > 0 && (
           <div className="section-header-group">
-            <h2>What to learn next</h2>
-            <div className="continue-learning-card" onClick={() => {
-              const course = courses.find(c => c.name === lastWatched.courseName);
-              if (course) {
-                let foundVideo = null;
-                const searchVideo = (items) => {
-                  for (const item of items) {
-                    if (item.type === 'file' && (item.path === lastWatched.videoPath || item.name === lastWatched.videoName)) foundVideo = item;
-                    if (!foundVideo && item.type === 'directory' && item.children) searchVideo(item.children);
-                  }
-                };
-                if (course.children) searchVideo(course.children);
-                
-                setSelectedCourse(course);
-                if (foundVideo) setCurrentVideo(foundVideo);
-              }
-            }}>
-              <div className="cl-thumbnail" style={{ background: '#2d2f31', position: 'relative' }}>
-                <ThumbnailRenderer handle={courses.find(c => c.name === lastWatched.courseName)?.thumbnailHandle} />
-                <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                  <Play fill="white" color="white" size={48} />
-                </div>
-              </div>
-              <div className="cl-info">
-                <span className="cl-meta" style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.4rem', color: '#6a6f73' }}>
-                  Date {new Date(lastWatched.timestamp).toLocaleDateString()}
-                </span>
-                <span className="cl-course-title">{lastWatched.courseName}</span>
-                <span className="cl-lecture-title">{lastWatched.videoName}</span>
-                <span className="cl-meta">Lecture • Resume</span>
+            <h2>Resume learning</h2>
+            <div className="carousel-wrapper">
+              <div className="course-carousel" style={{ paddingBottom: '1rem' }}>
+                {Object.values(lastWatched)
+                  .sort((a, b) => b.timestamp - a.timestamp)
+                  .map((record, idx) => {
+                    const course = courses.find(c => c.name === record.courseName);
+                    if (!course) return null;
+                    return (
+                      <div key={course.name + idx} className="continue-learning-card" style={{ marginBottom: 0, minWidth: '350px', height: 'fit-content' }} onClick={() => {
+                        let foundVideo = null;
+                        const searchVideo = (items) => {
+                          for (const item of items) {
+                            if (item.type === 'file' && (item.path === record.videoPath || item.name === record.videoName)) foundVideo = item;
+                            if (!foundVideo && item.type === 'directory' && item.children) searchVideo(item.children);
+                          }
+                        };
+                        if (course.children) searchVideo(course.children);
+
+                        setSelectedCourse(course);
+                        if (foundVideo) setCurrentVideo(foundVideo);
+                      }}>
+                        <div className="cl-thumbnail" style={{ width: '260px', height: 'auto', minHeight: '96px', alignSelf: 'stretch', background: '#2d2f31', position: 'relative', flexShrink: 0, overflow: 'hidden' }}>
+                          <ThumbnailRenderer handle={course.thumbnailHandle} />
+                          <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                            <Play fill="white" color="white" size={32} />
+                          </div>
+                        </div>
+                        <div className="cl-info" style={{ flex: 1 }}>
+                          <span className="cl-meta" style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.4rem', color: '#6a6f73' }}>
+                            Date {new Date(record.timestamp).toLocaleDateString()}
+                          </span>
+                          <span className="cl-course-title" style={{ fontSize: '1.4rem' }}>{record.courseName}</span>
+                          <span className="cl-lecture-title" style={{ fontSize: '1.2rem' }}>{record.videoName}</span>
+                          <span className="cl-meta">Lecture • Resume</span>
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           </div>
@@ -387,13 +445,13 @@ function App() {
               {courses.map(course => (
                 <div key={course.name} className="course-card-new" onClick={() => handleCourseSelect(course)}>
                   <div className="cc-thumbnail">
-                     <ThumbnailRenderer handle={course.thumbnailHandle} fallback={
-                       <div className="cc-placeholder" style={{ background: course.color }}>
-                         <span style={{ fontWeight: 700, fontSize: '2rem', padding: '1rem', textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
-                           {course.name.substring(0, 2).toUpperCase()}
-                         </span>
-                       </div>
-                     }/>
+                    <ThumbnailRenderer handle={course.thumbnailHandle} fallback={
+                      <div className="cc-placeholder" style={{ background: course.color }}>
+                        <span style={{ fontWeight: 700, fontSize: '2rem', padding: '1rem', textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
+                          {course.name.substring(0, 2).toUpperCase()}
+                        </span>
+                      </div>
+                    } />
                   </div>
                   <div className="cc-details">
                     <h3 className="cc-title">{course.name}</h3>
@@ -421,7 +479,7 @@ function App() {
 // Sub Component to Render FileSystemHandle as Image URL safely
 const ThumbnailRenderer = ({ handle, fallback }) => {
   const [url, setUrl] = useState(null);
-  
+
   useEffect(() => {
     let active = true;
     let objectUrl = null;
@@ -438,9 +496,9 @@ const ThumbnailRenderer = ({ handle, fallback }) => {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     }
   }, [handle]);
-  
-  if (!handle || !url) return fallback || <div style={{width:'100%', height:'100%', background:'#2d2f31'}}></div>;
-  
+
+  if (!handle || !url) return fallback || <div style={{ width: '100%', height: '100%', background: '#2d2f31' }}></div>;
+
   return <img src={url} alt="Thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
 };
 
@@ -454,27 +512,27 @@ const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, side
 
   useEffect(() => {
     if (!currentVideo || !course.children) return;
-    
+
     const pathObj = {};
     const tryFindPath = (items, targetName) => {
       for (const item of items) {
         if (item.type === 'file' && item.name === targetName) {
-           return true; 
+          return true;
         }
         if (item.type === 'directory' && item.children) {
-           if (tryFindPath(item.children, targetName)) {
-              pathObj[item.name] = true;
-              return true;
-           }
+          if (tryFindPath(item.children, targetName)) {
+            pathObj[item.name] = true;
+            return true;
+          }
         }
       }
       return false;
     };
-    
+
     if (tryFindPath(course.children, currentVideo.name)) {
-       setTimeout(() => {
-         setExpandedFolders(prev => ({ ...prev, ...pathObj }));
-       }, 0);
+      setTimeout(() => {
+        setExpandedFolders(prev => ({ ...prev, ...pathObj }));
+      }, 0);
     }
   }, [currentVideo, course.children]);
 
@@ -505,35 +563,35 @@ const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, side
   };
 
   const handleNextVideo = () => {
-     if (currentVideo && !completedVideos.has(currentVideo.path)) {
-        onMarkComplete(currentVideo.path);
-     }
-     const currentIndex = flatPlaylist.findIndex(v => v.name === currentVideo?.name);
-     if (currentIndex !== -1 && currentIndex + 1 < flatPlaylist.length) {
-       setCurrentVideo(flatPlaylist[currentIndex + 1]);
-     }
+    if (currentVideo && !completedVideos.has(currentVideo.path)) {
+      onMarkComplete(currentVideo.path);
+    }
+    const currentIndex = flatPlaylist.findIndex(v => v.name === currentVideo?.name);
+    if (currentIndex !== -1 && currentIndex + 1 < flatPlaylist.length) {
+      setCurrentVideo(flatPlaylist[currentIndex + 1]);
+    }
   };
 
   const handleVideoCompleted = (shouldAutoplay) => {
-     if (currentVideo && !completedVideos.has(currentVideo.path)) {
-        onMarkComplete(currentVideo.path);
-     }
-     if (shouldAutoplay) {
-        handleNextVideo();
-     }
+    if (currentVideo && !completedVideos.has(currentVideo.path)) {
+      onMarkComplete(currentVideo.path);
+    }
+    if (shouldAutoplay) {
+      handleNextVideo();
+    }
   };
 
   return (
-    <div className="player-page" style={{backgroundColor: '#000', height: '100vh', display: 'flex', flexDirection: 'column'}}>
-      <header className="player-header" style={{height: '5.6rem', backgroundColor: '#1c1d1f', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 1.6rem', borderBottom: '1px solid #3e4143', zIndex: 100, flexShrink: 0}}>
-        <div className="player-header-left" style={{display: 'flex', alignItems: 'center', gap: '1.6rem', flex: 1}}>
+    <div className="player-page" style={{ backgroundColor: '#000', height: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <header className="player-header" style={{ height: '5.6rem', backgroundColor: '#1c1d1f', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 1.6rem', borderBottom: '1px solid #3e4143', zIndex: 100, flexShrink: 0 }}>
+        <div className="player-header-left" style={{ display: 'flex', alignItems: 'center', gap: '1.6rem', flex: 1 }}>
           <div style={{ fontSize: '2.4rem', fontWeight: 800, color: '#fff', cursor: 'pointer', fontFamily: 'sans-serif', border: '2px solid #a435f0', padding: '0.2rem 0.6rem', borderRadius: '4px' }} onClick={onBack}>Learn<span style={{ color: '#a435f0' }}>It</span></div>
-          <div className="player-header-title" style={{fontWeight: 700, fontSize: '1.4rem', color: '#fff', borderLeft: '1px solid #3e4143', paddingLeft: '1.6rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '600px'}}>{course.name}</div>
+          <div className="player-header-title" style={{ fontWeight: 700, fontSize: '1.4rem', color: '#fff', borderLeft: '1px solid #3e4143', paddingLeft: '1.6rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '600px' }}>{course.name}</div>
         </div>
-        <div className="player-header-right" style={{display: 'flex', alignItems: 'center', gap: '1.6rem'}}>
-          <button style={{background: 'transparent', color: '#fff', border: 'none', fontWeight: 700, fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '0.8rem', cursor: 'pointer'}}><Star size={16} /> Leave a rating</button>
+        <div className="player-header-right" style={{ display: 'flex', alignItems: 'center', gap: '1.6rem' }}>
+          <button style={{ background: 'transparent', color: '#fff', border: 'none', fontWeight: 700, fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '0.8rem', cursor: 'pointer' }}><Star size={16} /> Leave a rating</button>
           <div style={{ position: 'relative' }}>
-            <button onClick={() => setShowProgressPanel(p => !p)} style={{background: showProgressPanel ? 'rgba(164,53,240,0.15)' : 'transparent', color: '#fff', border: '1px solid #fff', padding: '0.6rem 1.2rem', fontWeight: 700, fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '0.8rem', cursor: 'pointer', borderRadius: '4px'}}><Trophy size={16} /> Your progress</button>
+            <button onClick={() => setShowProgressPanel(p => !p)} style={{ background: showProgressPanel ? 'rgba(164,53,240,0.15)' : 'transparent', color: '#fff', border: '1px solid #fff', padding: '0.6rem 1.2rem', fontWeight: 700, fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '0.8rem', cursor: 'pointer', borderRadius: '4px' }}><Trophy size={16} /> Your progress</button>
             {showProgressPanel && (
               <div style={{ position: 'absolute', top: 'calc(100% + 1rem)', right: 0, width: '30rem', background: '#1c1d1f', border: '1px solid #3e4143', borderRadius: '8px', padding: '2rem', zIndex: 300, boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.6rem' }}>
@@ -591,19 +649,19 @@ const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, side
               </div>
             )}
           </div>
-          <button style={{background: 'transparent', color: '#fff', border: '1px solid #fff', padding: '0.6rem 1.2rem', fontWeight: 700, fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '0.8rem', cursor: 'pointer'}}>Share <Share2 size={16} /></button>
-          <button style={{background: 'transparent', color: '#fff', border: '1px solid #fff', padding: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'}}><MoreVertical size={16} /></button>
+          <button style={{ background: 'transparent', color: '#fff', border: '1px solid #fff', padding: '0.6rem 1.2rem', fontWeight: 700, fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '0.8rem', cursor: 'pointer' }}>Share <Share2 size={16} /></button>
+          <button style={{ background: 'transparent', color: '#fff', border: '1px solid #fff', padding: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><MoreVertical size={16} /></button>
         </div>
       </header>
 
-      <div className="player-body" style={{display: 'flex', flex: 1, overflow: 'hidden'}}>
-        <div className="course-main-left" style={{flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', backgroundColor: '#fff'}}>
+      <div className="player-body" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <div className="course-main-left" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', backgroundColor: '#fff' }}>
           <div className="video-container" style={{ position: 'relative', width: '100%', background: '#000', display: 'flex', flexShrink: 0, aspectRatio: '16/9' }}>
             {currentVideo ? (
-              <LocalVideoPlayer 
-                fileHandle={currentVideo.handle} 
-                onEnded={handleVideoCompleted} 
-                onNext={handleNextVideo} 
+              <LocalVideoPlayer
+                fileHandle={currentVideo.handle}
+                onEnded={handleVideoCompleted}
+                onNext={handleNextVideo}
                 onUpdateTime={onUpdateTime}
               />
             ) : (
@@ -615,7 +673,7 @@ const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, side
 
           <div className="course-content-tabs" style={{ display: 'flex', gap: '2.4rem', padding: '0 2.4rem', borderBottom: '1px solid #d1d7dc', marginTop: '2.4rem' }}>
             {['Overview', 'Q&A', 'Notes', 'Announcements', 'Reviews', 'Learning tools'].map(tab => (
-              <div 
+              <div
                 key={tab}
                 onClick={() => setActiveTab(tab.toLowerCase())}
                 style={{
@@ -632,7 +690,7 @@ const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, side
               </div>
             ))}
           </div>
-          
+
           <div className="course-tab-content" style={{ padding: '2.4rem', backgroundColor: '#fff' }}>
             {activeTab === 'overview' && (
               <>
@@ -650,12 +708,12 @@ const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, side
                     51 hours total
                   </div>
                 </div>
-                
+
                 <div>
                   <h3 style={{ fontSize: '1.6rem', fontWeight: 700, marginBottom: '1.6rem', color: '#2d2f31' }}>Description</h3>
                   <p style={{ fontSize: '1.4rem', lineHeight: '1.6', color: '#2d2f31' }}>
-                    Become a Full-Stack Web Developer with just one course. HTML, CSS, Javascript, Node, React, MongoDB, Web3 and DApps 
-                    <br/><br/>
+                    Become a Full-Stack Web Developer with just one course. HTML, CSS, Javascript, Node, React, MongoDB, Web3 and DApps
+                    <br /><br />
                     {course.details}
                   </p>
                 </div>
@@ -665,10 +723,10 @@ const VideoPlayerLayout = ({ course, currentVideo, setCurrentVideo, onBack, side
         </div>
 
         {sidebarOpen && (
-          <div className="course-sidebar-right" style={{width: '40rem', backgroundColor: '#fff', display: 'flex', flexDirection: 'column', flexShrink: 0, zIndex: 20}}>
-            <div className="sidebar-tabs" style={{display: 'flex', borderBottom: '1px solid #d1d7dc', alignItems: 'center', background: 'white'}}>
-              <div className="sidebar-tab active" style={{flex: 1, padding: '1.6rem', fontWeight: 700, fontSize: '1.4rem', color: '#2d2f31', borderBottom: '2px solid #2d2f31', textAlign: 'center', cursor: 'pointer'}}>Course content</div>
-              <div className="sidebar-tab" style={{flex: 1, padding: '1.6rem', fontWeight: 700, fontSize: '1.4rem', color: '#a435f0', textAlign: 'center', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem'}}><Sparkles size={16} /> AI Assistant</div>
+          <div className="course-sidebar-right" style={{ width: '40rem', backgroundColor: '#fff', display: 'flex', flexDirection: 'column', flexShrink: 0, zIndex: 20 }}>
+            <div className="sidebar-tabs" style={{ display: 'flex', borderBottom: '1px solid #d1d7dc', alignItems: 'center', background: 'white' }}>
+              <div className="sidebar-tab active" style={{ flex: 1, padding: '1.6rem', fontWeight: 700, fontSize: '1.4rem', color: '#2d2f31', borderBottom: '2px solid #2d2f31', textAlign: 'center', cursor: 'pointer' }}>Course content</div>
+              <div className="sidebar-tab" style={{ flex: 1, padding: '1.6rem', fontWeight: 700, fontSize: '1.4rem', color: '#a435f0', textAlign: 'center', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem' }}><Sparkles size={16} /> AI Assistant</div>
               <div style={{ padding: '1.6rem', cursor: 'pointer', borderLeft: '1px solid #d1d7dc' }} onClick={() => setSidebarOpen(false)}><X size={20} color="#2d2f31" /></div>
             </div>
 
@@ -701,7 +759,7 @@ const LocalVideoPlayer = ({ fileHandle, onEnded, onNext, onUpdateTime }) => {
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [autoplayEnabled, setAutoplayEnabled] = useState(true);
   const containerRef = useRef(null);
-  
+
   useEffect(() => {
     let active = true;
     let objectUrl = null;
@@ -722,16 +780,16 @@ const LocalVideoPlayer = ({ fileHandle, onEnded, onNext, onUpdateTime }) => {
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    
+
     const updateProgress = () => {
       setCurrentTime(video.currentTime);
       setProgress((video.currentTime / video.duration) * 100 || 0);
       if (video.currentTime > 0) {
-         localStorage.setItem(`learnit_resume_${fileHandle.name}`, video.currentTime);
-         // Throttle logic could be here, but for now we'll pass to parent
-         if (Math.abs(video.currentTime - currentTime) > 5) {
-            onUpdateTime(video.currentTime);
-         }
+        localStorage.setItem(`learnit_resume_${fileHandle.name}`, video.currentTime);
+        // Throttle logic could be here, but for now we'll pass to parent
+        if (Math.abs(video.currentTime - currentTime) > 5) {
+          onUpdateTime(video.currentTime);
+        }
       }
     };
     const updateDuration = () => {
@@ -742,13 +800,13 @@ const LocalVideoPlayer = ({ fileHandle, onEnded, onNext, onUpdateTime }) => {
 
       const savedTime = localStorage.getItem(`learnit_resume_${fileHandle.name}`);
       if (savedTime) {
-         const t = parseFloat(savedTime);
-         if (t > 0 && t < video.duration - 5) {
-            video.currentTime = t;
-         }
+        const t = parseFloat(savedTime);
+        if (t > 0 && t < video.duration - 5) {
+          video.currentTime = t;
+        }
       }
     };
-    
+
     video.addEventListener('timeupdate', updateProgress);
     video.addEventListener('loadedmetadata', updateDuration);
     return () => {
@@ -761,11 +819,11 @@ const LocalVideoPlayer = ({ fileHandle, onEnded, onNext, onUpdateTime }) => {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
-      
+
       const video = videoRef.current;
       if (!video) return;
 
-      switch(e.key) {
+      switch (e.key) {
         case 'ArrowRight':
           video.currentTime = Math.min(video.duration, video.currentTime + 10);
           break;
@@ -794,7 +852,7 @@ const LocalVideoPlayer = ({ fileHandle, onEnded, onNext, onUpdateTime }) => {
           break;
       }
     };
-    
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -834,7 +892,7 @@ const LocalVideoPlayer = ({ fileHandle, onEnded, onNext, onUpdateTime }) => {
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       containerRef.current.requestFullscreen().catch(err => {
-         console.error(err);
+        console.error(err);
       });
     } else {
       document.exitFullscreen();
@@ -848,35 +906,35 @@ const LocalVideoPlayer = ({ fileHandle, onEnded, onNext, onUpdateTime }) => {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  if (!url) return <div style={{color:'white', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%'}}>Loading video file...</div>;
+  if (!url) return <div style={{ color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}>Loading video file...</div>;
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', background: '#000', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <video 
+      <video
         ref={videoRef}
-        src={url} 
-        autoPlay 
+        src={url}
+        autoPlay
         onEnded={() => {
-           if (onEnded) onEnded(autoplayEnabled);
+          if (onEnded) onEnded(autoplayEnabled);
         }}
         onClick={togglePlay}
         style={{ width: '100%', flex: 1, objectFit: 'contain' }}
       />
       {duration > 0 && (duration - currentTime <= 5) && onNext && (
-         <div style={{ position: 'absolute', bottom: '80px', right: '32px', zIndex: 50 }}>
-            <button onClick={onNext} style={{ background: '#1c1d1f', border: '1px solid #3e4143', color: '#fff', padding: '1.2rem 2.4rem', fontSize: '1.6rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.8rem', boxShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
-              Next Lecture <Play size={16} fill="white" />
-            </button>
-         </div>
+        <div style={{ position: 'absolute', bottom: '80px', right: '32px', zIndex: 50 }}>
+          <button onClick={onNext} style={{ background: '#1c1d1f', border: '1px solid #3e4143', color: '#fff', padding: '1.2rem 2.4rem', fontSize: '1.6rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.8rem', boxShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
+            Next Lecture <Play size={16} fill="white" />
+          </button>
+        </div>
       )}
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '2rem 1.6rem 1.2rem', display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-        
+
         <div style={{ height: '4px', background: 'rgba(255,255,255,0.3)', cursor: 'pointer', position: 'relative', borderRadius: '2px' }} onClick={handleSeek}>
           <div style={{ height: '100%', width: `${progress}%`, background: '#a435f0', borderRadius: '2px', position: 'relative' }}>
             <div style={{ position: 'absolute', right: '-6px', top: '-4px', width: '12px', height: '12px', background: '#a435f0', borderRadius: '50%' }}></div>
           </div>
         </div>
-        
+
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#fff', marginTop: '0.4rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1.6rem' }}>
             <button onClick={togglePlay} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex' }}>
@@ -885,14 +943,14 @@ const LocalVideoPlayer = ({ fileHandle, onEnded, onNext, onUpdateTime }) => {
             <button onClick={() => videoRef.current.currentTime -= 10} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex' }}>
               <RotateCcw size={18} />
             </button>
-            
+
             <div style={{ position: 'relative' }}>
               {showSpeedMenu && (
                 <div style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: '8px', background: 'rgba(28, 29, 31, 0.95)', border: '1px solid #3e4143', borderRadius: '4px', padding: '8px 0', display: 'flex', flexDirection: 'column', zIndex: 100 }}>
                   {[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].reverse().map(rate => (
-                    <button 
-                      key={rate} 
-                      onClick={() => handleSpeedChange(rate)} 
+                    <button
+                      key={rate}
+                      onClick={() => handleSpeedChange(rate)}
                       style={{ background: 'transparent', border: 'none', color: playbackRate === rate ? '#fff' : '#d1d7dc', width: '100%', padding: '6px 16px', fontSize: '1.3rem', fontWeight: playbackRate === rate ? 700 : 400, cursor: 'pointer', textAlign: 'center' }}
                       onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
                       onMouseLeave={(e) => e.target.style.background = 'transparent'}
@@ -918,27 +976,27 @@ const LocalVideoPlayer = ({ fileHandle, onEnded, onNext, onUpdateTime }) => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '1.6rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', fontSize: '1.3rem', fontWeight: 500 }}>
               Autoplay
-              <div 
-                 onClick={() => setAutoplayEnabled(!autoplayEnabled)}
-                 style={{ width: '32px', height: '18px', background: autoplayEnabled ? '#a435f0' : '#3e4143', borderRadius: '10px', position: 'relative', cursor: 'pointer', transition: 'background 0.2s' }}
+              <div
+                onClick={() => setAutoplayEnabled(!autoplayEnabled)}
+                style={{ width: '32px', height: '18px', background: autoplayEnabled ? '#a435f0' : '#3e4143', borderRadius: '10px', position: 'relative', cursor: 'pointer', transition: 'background 0.2s' }}
               >
                 <div style={{ width: '14px', height: '14px', background: '#fff', borderRadius: '50%', position: 'absolute', right: autoplayEnabled ? '2px' : 'auto', left: autoplayEnabled ? 'auto' : '2px', top: '2px', transition: 'all 0.2s' }}></div>
               </div>
             </div>
-            
-            <button onClick={() => { setIsMuted(!isMuted); if(videoRef.current) videoRef.current.muted = !isMuted; }} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex' }}>
+
+            <button onClick={() => { setIsMuted(!isMuted); if (videoRef.current) videoRef.current.muted = !isMuted; }} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex' }}>
               {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
             </button>
-            
-            <input 
-              type="range" 
-              min="0" max="1" step="0.01" 
-              value={isMuted ? 0 : volume} 
+
+            <input
+              type="range"
+              min="0" max="1" step="0.01"
+              value={isMuted ? 0 : volume}
               onChange={handleVolumeChange}
               style={{ width: '60px', accentColor: '#a435f0', cursor: 'pointer' }}
             />
             <span style={{ fontSize: '1.2rem', fontWeight: 500, width: '36px' }}>{Math.round((isMuted ? 0 : volume) * 100)}%</span>
-            
+
             <button onClick={toggleFullscreen} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex' }}>
               <Maximize size={20} />
             </button>
@@ -961,9 +1019,9 @@ const SimpleFileTree = ({ items, expanded, toggle, onPlay, current, completed, o
           const isExpanded = expanded[item.name];
           return (
             <div key={item.name} className="tree-directory">
-              <div 
-                onClick={() => toggle(item.name)} 
-                className="directory-header" 
+              <div
+                onClick={() => toggle(item.name)}
+                className="directory-header"
                 style={{ padding: '1.6rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f7f9fa', borderBottom: '1px solid #d1d7dc', cursor: 'pointer' }}
               >
                 <div style={{ flex: 1 }}>
@@ -980,14 +1038,14 @@ const SimpleFileTree = ({ items, expanded, toggle, onPlay, current, completed, o
           );
         } else {
           return (
-            <LessonItem 
+            <LessonItem
               key={item.name}
-              item={item} 
-              current={current} 
-              onPlay={onPlay} 
-              completed={completed} 
+              item={item}
+              current={current}
+              onPlay={onPlay}
+              completed={completed}
               onToggleComplete={onToggleComplete}
-              level={level} 
+              level={level}
             />
           );
         }
@@ -1022,11 +1080,11 @@ const LessonItem = ({ item, current, onPlay, completed, onToggleComplete, level 
     if (isVideo) {
       onPlay(item);
     } else {
-       // For documents, we must open a blob
-       item.handle.getFile().then(file => {
-          const url = URL.createObjectURL(file);
-          window.open(url, '_blank');
-       });
+      // For documents, we must open a blob
+      item.handle.getFile().then(file => {
+        const url = URL.createObjectURL(file);
+        window.open(url, '_blank');
+      });
     }
   };
 
@@ -1036,8 +1094,8 @@ const LessonItem = ({ item, current, onPlay, completed, onToggleComplete, level 
       onClick={handleItemClick}
       style={{ paddingLeft: level > 0 ? '1.6rem' : '1.6rem', backgroundColor: current?.name === item.name ? '#e1f0ec' : 'transparent', borderLeft: current?.name === item.name ? '4px solid #a435f0' : '4px solid transparent' }}
     >
-      <div className="lesson-checkbox" onClick={(e) => { e.stopPropagation(); onToggleComplete && isVideo && onToggleComplete(item.path); }} style={{cursor: 'pointer'}}>
-        {isVideo && (completed.has(item.path) ? <div style={{width: '16px', height: '16px', backgroundColor: '#a435f0', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '2px'}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div> : <div style={{width: '16px', height: '16px', border: '1px solid #8B9093', borderRadius: '2px'}}></div>)}
+      <div className="lesson-checkbox" onClick={(e) => { e.stopPropagation(); onToggleComplete && isVideo && onToggleComplete(item.path); }} style={{ cursor: 'pointer' }}>
+        {isVideo && (completed.has(item.path) ? <div style={{ width: '16px', height: '16px', backgroundColor: '#a435f0', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '2px' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div> : <div style={{ width: '16px', height: '16px', border: '1px solid #8B9093', borderRadius: '2px' }}></div>)}
         {!isVideo && <div style={{ width: 16 }}></div>}
       </div>
       <div className="lesson-info">
