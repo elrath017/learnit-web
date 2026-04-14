@@ -394,82 +394,78 @@ function App() {
         {Object.keys(lastWatched).length > 0 && (
           <div className="section-header-group">
             <h2>Resume learning</h2>
-            <div className="carousel-wrapper">
-              <div className="course-carousel" style={{ paddingBottom: '1rem' }}>
-                {Object.values(lastWatched)
-                  .sort((a, b) => b.timestamp - a.timestamp)
-                  .map((record, idx) => {
-                    const course = courses.find(c => c.name === record.courseName);
-                    if (!course) return null;
-                    return (
-                      <div key={course.name + idx} className="continue-learning-card" style={{ marginBottom: 0, minWidth: '350px', height: 'fit-content' }} onClick={() => {
-                        let foundVideo = null;
-                        const searchVideo = (items) => {
-                          for (const item of items) {
-                            if (item.type === 'file' && (item.path === record.videoPath || item.name === record.videoName)) foundVideo = item;
-                            if (!foundVideo && item.type === 'directory' && item.children) searchVideo(item.children);
-                          }
-                        };
-                        if (course.children) searchVideo(course.children);
+            <Carousel style={{ paddingBottom: '1rem' }}>
+              {Object.values(lastWatched)
+                .sort((a, b) => b.timestamp - a.timestamp)
+                .map((record, idx) => {
+                  const course = courses.find(c => c.name === record.courseName);
+                  if (!course) return null;
+                  return (
+                    <div key={course.name + idx} className="continue-learning-card" style={{ marginBottom: 0, minWidth: '350px', height: 'fit-content' }} onClick={() => {
+                      let foundVideo = null;
+                      const searchVideo = (items) => {
+                        for (const item of items) {
+                          if (item.type === 'file' && (item.path === record.videoPath || item.name === record.videoName)) foundVideo = item;
+                          if (!foundVideo && item.type === 'directory' && item.children) searchVideo(item.children);
+                        }
+                      };
+                      if (course.children) searchVideo(course.children);
 
-                        setSelectedCourse(course);
-                        if (foundVideo) setCurrentVideo(foundVideo);
-                      }}>
-                        <div className="cl-thumbnail" style={{ width: '260px', height: 'auto', minHeight: '96px', alignSelf: 'stretch', background: '#2d2f31', position: 'relative', flexShrink: 0, overflow: 'hidden' }}>
-                          <ThumbnailRenderer handle={course.thumbnailHandle} />
-                          <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                            <Play fill="white" color="white" size={32} />
-                          </div>
-                        </div>
-                        <div className="cl-info" style={{ flex: 1 }}>
-                          <span className="cl-meta" style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.4rem', color: '#6a6f73' }}>
-                            Date {new Date(record.timestamp).toLocaleDateString()}
-                          </span>
-                          <span className="cl-course-title" style={{ fontSize: '1.4rem' }}>{record.courseName}</span>
-                          <span className="cl-lecture-title" style={{ fontSize: '1.2rem' }}>{record.videoName}</span>
-                          <span className="cl-meta">Lecture • Resume</span>
+                      setSelectedCourse(course);
+                      if (foundVideo) setCurrentVideo(foundVideo);
+                    }}>
+                      <div className="cl-thumbnail" style={{ width: '260px', height: 'auto', minHeight: '96px', alignSelf: 'stretch', background: '#2d2f31', position: 'relative', flexShrink: 0, overflow: 'hidden' }}>
+                        <ThumbnailRenderer handle={course.thumbnailHandle} />
+                        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                          <Play fill="white" color="white" size={32} />
                         </div>
                       </div>
-                    );
-                  })}
-              </div>
-            </div>
+                      <div className="cl-info" style={{ flex: 1 }}>
+                        <span className="cl-meta" style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.4rem', color: '#6a6f73' }}>
+                          Date {new Date(record.timestamp).toLocaleDateString()}
+                        </span>
+                        <span className="cl-course-title" style={{ fontSize: '1.4rem' }}>{record.courseName}</span>
+                        <span className="cl-lecture-title" style={{ fontSize: '1.2rem' }}>{record.videoName}</span>
+                        <span className="cl-meta">Lecture • Resume</span>
+                      </div>
+                    </div>
+                  );
+                })}
+            </Carousel>
           </div>
         )}
 
         <div className="section-header-group" style={{ marginTop: '4rem' }}>
           <h3>Your Library</h3>
           {courses.length === 0 && <p style={{ fontSize: '1.4rem', color: '#6a6f73' }}>No courses loaded. Click 'Folder' in the top right.</p>}
-          <div className="carousel-wrapper">
-            <div className="course-carousel">
-              {courses.map(course => (
-                <div key={course.name} className="course-card-new" onClick={() => handleCourseSelect(course)}>
-                  <div className="cc-thumbnail">
-                    <ThumbnailRenderer handle={course.thumbnailHandle} fallback={
-                      <div className="cc-placeholder" style={{ background: course.color }}>
-                        <span style={{ fontWeight: 700, fontSize: '2rem', padding: '1rem', textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
-                          {course.name.substring(0, 2).toUpperCase()}
-                        </span>
-                      </div>
-                    } />
-                  </div>
-                  <div className="cc-details">
-                    <h3 className="cc-title">{course.name}</h3>
-                    <span className="cc-instructor">{course.instructor}</span>
-                    <div className="cc-rating-row">
-                      <span className="rating-number">{course.rating}</span>
-                      <div className="rating-stars">
-                        {[...Array(5)].map((_, i) => (
-                          <Star key={i} size={12} fill="#e59819" color="#e59819" />
-                        ))}
-                      </div>
-                      <span className="rating-count">({course.reviewCount})</span>
+          <Carousel>
+            {courses.map(course => (
+              <div key={course.name} className="course-card-new" onClick={() => handleCourseSelect(course)}>
+                <div className="cc-thumbnail">
+                  <ThumbnailRenderer handle={course.thumbnailHandle} fallback={
+                    <div className="cc-placeholder" style={{ background: course.color }}>
+                      <span style={{ fontWeight: 700, fontSize: '2rem', padding: '1rem', textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
+                        {course.name.substring(0, 2).toUpperCase()}
+                      </span>
                     </div>
+                  } />
+                </div>
+                <div className="cc-details">
+                  <h3 className="cc-title">{course.name}</h3>
+                  <span className="cc-instructor">{course.instructor}</span>
+                  <div className="cc-rating-row">
+                    <span className="rating-number">{course.rating}</span>
+                    <div className="rating-stars">
+                      {[...Array(5)].map((_, i) => (
+                        <Star key={i} size={12} fill="#e59819" color="#e59819" />
+                      ))}
+                    </div>
+                    <span className="rating-count">({course.reviewCount})</span>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
+            ))}
+          </Carousel>
         </div>
       </main>
     </div>
@@ -1107,6 +1103,60 @@ const LessonItem = ({ item, current, onPlay, completed, onToggleComplete, level 
           <span>{isVideo ? (duration !== null ? `${Math.round(duration / 60)}min` : 'Video') : 'PDF'}</span>
         </div>
       </div>
+    </div>
+  );
+};
+
+const Carousel = ({ children, style, innerClassName = "course-carousel" }) => {
+  const scrollRef = useRef(null);
+  const [showLeft, setShowLeft] = useState(false);
+  const [showRight, setShowRight] = useState(false);
+
+  const checkScroll = () => {
+    if (!scrollRef.current) return;
+    const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
+    setShowLeft(scrollLeft > 0);
+    setShowRight(Math.ceil(scrollLeft + clientWidth) < scrollWidth);
+  };
+
+  useEffect(() => {
+    // A small delay ensures the DOM is painted for accurate scrollWidth
+    const timer = setTimeout(checkScroll, 100);
+    window.addEventListener('resize', checkScroll);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', checkScroll);
+    };
+  }, [children]);
+
+  return (
+    <div className="carousel-wrapper" style={{ position: 'relative' }}>
+      {showLeft && (
+        <button 
+          className="carousel-nav-btn" 
+          style={{ right: 'auto', left: '-2.4rem', zIndex: 10, position: 'absolute' }} 
+          onClick={() => scrollRef.current.scrollBy({ left: -400, behavior: 'smooth' })}
+        >
+          <ChevronLeft size={24} />
+        </button>
+      )}
+      <div 
+        className={innerClassName} 
+        style={{ ...style, overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }} 
+        ref={scrollRef} 
+        onScroll={checkScroll}
+      >
+        {children}
+      </div>
+      {showRight && (
+        <button 
+          className="carousel-nav-btn" 
+          style={{ right: '-2.4rem', zIndex: 10, position: 'absolute' }} 
+          onClick={() => scrollRef.current.scrollBy({ left: 400, behavior: 'smooth' })}
+        >
+          <ChevronRight size={24} />
+        </button>
+      )}
     </div>
   );
 };
