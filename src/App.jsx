@@ -756,6 +756,25 @@ const LocalVideoPlayer = ({ fileHandle, onEnded, onNext, onUpdateTime }) => {
   const [autoplayEnabled, setAutoplayEnabled] = useState(true);
   const containerRef = useRef(null);
 
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const hideControlsTimeoutRef = useRef(null);
+
+  const handleMouseMove = () => {
+    setControlsVisible(true);
+    if (hideControlsTimeoutRef.current) clearTimeout(hideControlsTimeoutRef.current);
+    hideControlsTimeoutRef.current = setTimeout(() => {
+      if (document.fullscreenElement) {
+        setControlsVisible(false);
+      }
+    }, 5000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (hideControlsTimeoutRef.current) clearTimeout(hideControlsTimeoutRef.current);
+    };
+  }, []);
+
   useEffect(() => {
     let active = true;
     let objectUrl = null;
@@ -905,7 +924,11 @@ const LocalVideoPlayer = ({ fileHandle, onEnded, onNext, onUpdateTime }) => {
   if (!url) return <div style={{ color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}>Loading video file...</div>;
 
   return (
-    <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', background: '#000', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div 
+      ref={containerRef} 
+      onMouseMove={handleMouseMove}
+      style={{ width: '100%', height: '100%', position: 'relative', background: '#000', display: 'flex', flexDirection: 'column', overflow: 'hidden', cursor: (!controlsVisible && document.fullscreenElement) ? 'none' : 'default' }}
+    >
       <video
         ref={videoRef}
         src={url}
@@ -917,13 +940,20 @@ const LocalVideoPlayer = ({ fileHandle, onEnded, onNext, onUpdateTime }) => {
         style={{ width: '100%', flex: 1, objectFit: 'contain' }}
       />
       {duration > 0 && (duration - currentTime <= 5) && onNext && (
-        <div style={{ position: 'absolute', bottom: '80px', right: '32px', zIndex: 50 }}>
+        <div style={{ position: 'absolute', bottom: '80px', right: '32px', zIndex: 50, opacity: (!controlsVisible && document.fullscreenElement) ? 0 : 1, transition: 'opacity 0.3s ease', pointerEvents: (!controlsVisible && document.fullscreenElement) ? 'none' : 'auto' }}>
           <button onClick={onNext} style={{ background: '#1c1d1f', border: '1px solid #3e4143', color: '#fff', padding: '1.2rem 2.4rem', fontSize: '1.6rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.8rem', boxShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
             Next Lecture <Play size={16} fill="white" />
           </button>
         </div>
       )}
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '2rem 1.6rem 1.2rem', display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+      <div 
+        onMouseEnter={() => {
+          setControlsVisible(true);
+          if (hideControlsTimeoutRef.current) clearTimeout(hideControlsTimeoutRef.current);
+        }}
+        onMouseLeave={handleMouseMove}
+        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.8))', padding: '2rem 1.6rem 1.2rem', display: 'flex', flexDirection: 'column', gap: '0.8rem', opacity: (!controlsVisible && document.fullscreenElement) ? 0 : 1, transition: 'opacity 0.3s ease', pointerEvents: (!controlsVisible && document.fullscreenElement) ? 'none' : 'auto' }}
+      >
 
         <div style={{ height: '4px', background: 'rgba(255,255,255,0.3)', cursor: 'pointer', position: 'relative', borderRadius: '2px' }} onClick={handleSeek}>
           <div style={{ height: '100%', width: `${progress}%`, background: '#a435f0', borderRadius: '2px', position: 'relative' }}>
