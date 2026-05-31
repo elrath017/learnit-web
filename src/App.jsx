@@ -1021,7 +1021,7 @@ const SimpleFileTree = ({ items, expanded, toggle, onPlay, current, completed, o
                 style={{ padding: '1.6rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f7f9fa', borderBottom: '1px solid #d1d7dc', cursor: 'pointer' }}
               >
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '1.6rem', fontWeight: 700, color: '#2d2f31' }}>{item.name.replace(/\.[^/.]+$/, "")}</div>
+                  <div style={{ fontSize: '1.6rem', fontWeight: 700, color: '#2d2f31' }}>{item.name}</div>
                 </div>
                 {isExpanded ? <ChevronLeft size={20} style={{ transform: 'rotate(90deg)' }} /> : <ChevronLeft size={20} style={{ transform: 'rotate(-90deg)' }} />}
               </div>
