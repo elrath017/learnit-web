@@ -1038,22 +1038,52 @@ const LocalVideoPlayer = ({ fileHandle, onEnded, onNext, onUpdateTime }) => {
 const SimpleFileTree = ({ items, expanded, toggle, onPlay, current, completed, onToggleComplete, level = 0 }) => {
   const sortedItems = [...items].sort(advancedSort);
 
+  const countVideos = (dir) => {
+    let count = 0;
+    if (dir.children) {
+      for (const child of dir.children) {
+        if (child.type === 'directory') count += countVideos(child);
+        else if (child.name.match(/\.(mp4|mkv|webm|ogg|mov|avi)$/i)) count++;
+      }
+    }
+    return count;
+  };
+
+  const countCompleted = (dir) => {
+    let count = 0;
+    if (dir.children) {
+      for (const child of dir.children) {
+        if (child.type === 'directory') count += countCompleted(child);
+        else if (child.name.match(/\.(mp4|mkv|webm|ogg|mov|avi)$/i) && completed.has(child.path)) count++;
+      }
+    }
+    return count;
+  };
+
   return (
     <div className="file-tree" style={{ paddingLeft: level > 0 ? '1.6rem' : '0' }}>
       {sortedItems.map(item => {
         if (item.type === 'directory') {
           const isExpanded = expanded[item.name];
+          const totalVids = countVideos(item);
+          const completedVids = countCompleted(item);
+          
           return (
             <div key={item.name} className="tree-directory">
               <div
                 onClick={() => toggle(item.name)}
                 className="directory-header"
-                style={{ padding: '1.6rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f7f9fa', borderBottom: '1px solid #d1d7dc', cursor: 'pointer' }}
+                style={{ padding: '1.6rem', display: 'flex', flexDirection: 'column', background: '#f7f9fa', borderBottom: '1px solid #d1d7dc', cursor: 'pointer' }}
               >
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '1.6rem', fontWeight: 700, color: '#2d2f31' }}>{item.name}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                  <div style={{ fontSize: '1.6rem', fontWeight: 700, color: '#2d2f31', flex: 1, paddingRight: '1rem' }}>{item.name}</div>
+                  {isExpanded ? <ChevronLeft size={20} style={{ transform: 'rotate(90deg)' }} /> : <ChevronLeft size={20} style={{ transform: 'rotate(-90deg)' }} />}
                 </div>
-                {isExpanded ? <ChevronLeft size={20} style={{ transform: 'rotate(90deg)' }} /> : <ChevronLeft size={20} style={{ transform: 'rotate(-90deg)' }} />}
+                {totalVids > 0 && (
+                  <div style={{ fontSize: '1.2rem', color: '#6a6f73', marginTop: '0.4rem' }}>
+                    {completedVids} / {totalVids} | {completedVids === totalVids ? 'Completed' : 'In Progress'}
+                  </div>
+                )}
               </div>
               {isExpanded && item.children && (
                 <div className="directory-children" style={{ borderBottom: '1px solid #d1d7dc' }}>
